@@ -1,0 +1,21 @@
+@import '@fontsource/fira-code';
+/* Using @theme for Tailwind v4 compatibility */
+@import "tailwindcss";
+
+@theme {
+  --color-razzmatazz: #E3256B;
+  --color-background: #151012;
+  --font-mono: "Fira Code", monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: white;
+    outline: none;
+    border-radius: 0;
+    font-family: var(--font-mono);
+    margin: 0;
+    overflow: hidden;
+  }
+}
