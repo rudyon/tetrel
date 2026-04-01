@@ -1,4 +1,4 @@
-import { ReactNode, useState, useRef, useEffect } from 'react';
+import { type ReactNode, useState, useRef, useEffect } from 'react';
 import { X, LayoutGrid } from 'lucide-react';
 
 interface BufferProps {
