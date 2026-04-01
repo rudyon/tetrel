@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useRef, useEffect } from 'react';
+import { type ReactNode, useState, useRef, useEffect, memo } from 'react';
 import { X, LayoutGrid } from 'lucide-react';
 
 interface BufferProps {
@@ -12,7 +12,7 @@ interface BufferProps {
   maxHeight?: string;
 }
 
-export default function Buffer({ id, title, children, onClose, onTile, initialPosition, zIndex, maxHeight }: BufferProps) {
+function Buffer({ id, title, children, onClose, onTile, initialPosition, zIndex, maxHeight }: BufferProps) {
   const [position, setPosition] = useState(initialPosition);
   const [isDragging, setIsDragging] = useState(false);
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -97,3 +97,5 @@ export default function Buffer({ id, title, children, onClose, onTile, initialPo
     </div>
   );
 }
+
+export default memo(Buffer);

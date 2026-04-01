@@ -26,6 +26,7 @@ The "Control Strip" at the bottom of the interface. It is the primary means of i
 - **Icon**: Lucide `Terminal`
 - **Color**: Razzmatazz
 - **Autocomplete**: Tab to complete, Arrow Up/Down to cycle, Enter to run.
+- **Performance**: Isolated component (typing does not re-render the workspace).
 
 ### 2. Buffers
 Floating windows that display content. They can be dragged around the workspace, constrained to screen bounds.
@@ -54,13 +55,16 @@ Opened via `CONFIG <PROVIDER>`. Saves an API key to `localStorage` under `TETREL
 ### `agent` — Agent Chat Interface
 Opened automatically on `SPAWN` or manually via `AGENT <IDENTIFIER>`.
 - Full streaming chat loop using **OpenRouter API** (SSE, `stream: true`).
+- **Markdown**: Rich text rendering via `react-markdown` + `remark-gfm`.
 - Chat history is **persistent**: stored in `App.tsx` (`agentHistories` map keyed by buffer ID) and survives close/reopen, tile/float, and remounts.
 - Supports **abort** (Stop button) mid-stream.
-- Displays error banner on API failure.
-- API key read from `TETREL_API_KEY_OPENROUTER` in `localStorage`.
+- **Linking**: Can be a "Linked Target." In this mode, manual input is disabled, and the agent automatically processes output piped from a source agent.
 
 ### `agents` — Agent Registry Overview
 Opened via `AGENTS`. A live table of all running agents: identifier, model, and a green pulse indicator.
+
+### `links` — Agent Link Registry
+Opened via `LINKS`. A live table showing active `Target <- Source` piping paths with actions to unlink.
 
 ---
 
@@ -68,10 +72,13 @@ Opened via `AGENTS`. A live table of all running agents: identifier, model, and 
 
 | Command | Arguments | Description |
 |---|---|---|
-| `SPAWN` | `<IDENTIFIER> <MODEL>` | Spawn a new agent and immediately open its buffer |
-| `AGENT` | `<IDENTIFIER>` | Re-open a running agent's buffer |
+| `SPAWN` | `<ID> <MODEL>` | Spawn a new agent and immediately open its buffer |
+| `AGENT` | `<ID>` | Re-open a running agent's buffer |
 | `AGENTS` | — | Open the agent registry overview buffer |
-| `KILL` | `<IDENTIFIER>` | Kill an agent and close its buffer |
+| `KILL` | `<ID>` | Kill an agent and clear its history/buffer |
+| `LINK` | `<SRC> <TGT>` | Pipe output of Source agent into Target agent |
+| `UNLINK` | `<TGT>` | Remove a link from a target agent |
+| `LINKS` | — | Open the agent link registry buffer |
 | `CONFIG` | `<PROVIDER>` | Open the provider configuration buffer |
 | `CLEAR` | — | Close all open buffers and reset the tiling workspace |
 | `HELP` | — | Show available commands (planned) |
@@ -82,15 +89,17 @@ Opened via `AGENTS`. A live table of all running agents: identifier, model, and 
 
 ```
 src/
-├── App.tsx                  # Root: command state, buffer registry, agent registry, BSP tree, history
+├── App.tsx                  # Root: orchestrator state, buffer management, linking logic
 ├── utils/
 │   └── bsp.ts               # Pure BSP tree operations (insert, remove, swap, updateRatio)
 └── components/
     ├── Buffer.tsx            # Floating buffer shell (drag, clamp, shadow, tile/close buttons)
     ├── TilingWorkspace.tsx   # BSP renderer (pixel-accurate layout, resize handles, drag-to-swap)
-    ├── AgentBuffer.tsx       # Controlled streaming chat UI (messages + onMessagesChange props)
+    ├── AgentBuffer.tsx       # Controlled streaming chat UI + Markdown + Linking onComplete hooks
     ├── AgentsBuffer.tsx      # Agent registry table
-    └── ConfigBuffer.tsx      # API key configuration form
+    ├── LinksBuffer.tsx       # Agent link registry table
+    ├── ConfigBuffer.tsx      # API key configuration form
+    └── CommandPrompt.tsx     # Isolated, high-performance command interface
 ```
 
 ### State Model (App.tsx)
@@ -101,3 +110,5 @@ src/
 | `tiledIds` | `Set<string>` | Fast lookup for which buffers are currently tiled |
 | `agents` | `Map<id, AgentRecord>` | Live agent registry (identifier → model) |
 | `agentHistories` | `Map<id, Message[]>` | Persistent chat histories keyed by buffer ID |
+| `links` | `Map<tgt, src>` | Active agent-to-agent output piping links |
+| `agentRefs` | `useRef<Map>` | Imperative handles to AgentBuffers for automated messaging |

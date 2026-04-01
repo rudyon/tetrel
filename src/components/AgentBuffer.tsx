@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
-import { Send, Bot, User, AlertTriangle, Loader } from 'lucide-react';
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle, type KeyboardEvent } from 'react';
+import { Send, Bot, User, AlertTriangle, Loader, Link as LinkIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -13,11 +13,17 @@ interface AgentBufferProps {
   model: string;
   messages: Message[];
   onMessagesChange: (messages: Message[]) => void;
+  isLinkedTarget?: boolean;
+  onMessageComplete?: (content: string) => void;
+}
+
+export interface AgentBufferHandle {
+  sendMessage: (msg: string) => Promise<void>;
 }
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
-export default function AgentBuffer({ model, messages, onMessagesChange }: AgentBufferProps) {
+const AgentBuffer = forwardRef<AgentBufferHandle, AgentBufferProps>(({ model, messages, onMessagesChange, isLinkedTarget, onMessageComplete }, ref) => {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,13 +34,25 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
   const messagesRef = useRef(messages);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
+  useImperativeHandle(ref, () => ({
+    sendMessage: async (msg: string) => {
+      await sendImpl(msg);
+    }
+  }));
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const send = async () => {
-    const trimmed = input.trim();
+  const send = () => sendImpl(input);
+
+  const sendImpl = async (textToSubmit: string) => {
+    const trimmed = textToSubmit.trim();
     if (!trimmed || streaming) return;
+
+    if (textToSubmit === input) {
+      setInput('');
+    }
 
     const apiKey = localStorage.getItem('TETREL_API_KEY_OPENROUTER');
     if (!apiKey) {
@@ -46,7 +64,6 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
     const userMsg: Message = { role: 'user', content: trimmed, timestamp: Date.now() };
     const nextMessages = [...messagesRef.current, userMsg];
     onMessagesChange(nextMessages);
-    setInput('');
     setStreaming(true);
 
     // Seed the assistant reply slot
@@ -56,6 +73,7 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let accumulated = '';
 
     try {
       const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
@@ -64,7 +82,7 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://tetrel.dev',
+          'HTTP-Referer': 'https://tetrel.tech',
           'X-Title': 'Tetrel',
         },
         body: JSON.stringify({
@@ -81,7 +99,6 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let accumulated = '';
 
       if (!reader) throw new Error('No response body');
 
@@ -132,6 +149,9 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
     } finally {
       setStreaming(false);
       abortRef.current = null;
+      if (accumulated && onMessageComplete) {
+        onMessageComplete(accumulated);
+      }
     }
   };
 
@@ -154,7 +174,10 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
     <div className="flex flex-col h-full min-h-0">
       {/* Model badge */}
       <div className="px-3 py-1 border-b border-razzmatazz/30 text-razzmatazz/60 text-xs uppercase tracking-widest select-none flex items-center justify-between">
-        <span>{model}</span>
+        <div className="flex items-center gap-2">
+          <span>{model}</span>
+          {isLinkedTarget && <LinkIcon size={12} className="text-cyan-400" />}
+        </div>
         {streaming && (
           <span className="flex items-center gap-1 text-razzmatazz/80">
             <Loader size={10} className="animate-spin" />
@@ -184,11 +207,10 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
             </div>
             <div className={`flex flex-col gap-0.5 max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div
-                className={`px-3 py-2 text-sm leading-relaxed !rounded-none border ${
-                  msg.role === 'assistant'
+                className={`px-3 py-2 text-sm leading-relaxed !rounded-none border ${msg.role === 'assistant'
                     ? 'bg-razzmatazz/10 border-razzmatazz/30 text-white'
                     : 'bg-white/5 border-white/10 text-gray-200'
-                } ${msg.role === 'assistant' && !msg.content && streaming ? 'animate-pulse' : ''}`}
+                  } ${msg.role === 'assistant' && !msg.content && streaming ? 'animate-pulse' : ''}`}
               >
                 {msg.content || (streaming ? '▋' : '') ? (
                   <ReactMarkdown
@@ -232,10 +254,11 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
       </div>
 
       {/* Input */}
-      <div className="border-t border-razzmatazz/30 flex items-center gap-2 px-3 py-2">
-        <input
-          type="text"
-          value={input}
+      {!isLinkedTarget ? (
+        <div className="border-t border-razzmatazz/30 flex items-center gap-2 px-3 py-2">
+          <input
+            type="text"
+            value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={streaming ? 'Waiting for response...' : 'Message agent...'}
@@ -259,8 +282,16 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
           >
             <Send size={14} />
           </button>
-        )}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div className="border-t border-cyan-400/30 flex items-center gap-2 px-3 py-2 bg-cyan-900/10">
+          <LinkIcon size={14} className="text-cyan-400" />
+          <span className="text-cyan-400/80 text-xs uppercase tracking-widest">Linked input Mode</span>
+        </div>
+      )}
     </div>
   );
-}
+});
+
+export default AgentBuffer;

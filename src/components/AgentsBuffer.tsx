@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Bot } from 'lucide-react';
 
 interface Agent {
@@ -9,7 +10,7 @@ interface AgentsBufferProps {
   agents: Agent[];
 }
 
-export default function AgentsBuffer({ agents }: AgentsBufferProps) {
+function AgentsBuffer({ agents }: AgentsBufferProps) {
   if (agents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-32 gap-2 text-gray-600 text-sm uppercase tracking-widest">
@@ -48,3 +49,5 @@ export default function AgentsBuffer({ agents }: AgentsBufferProps) {
     </div>
   );
 }
+
+export default memo(AgentsBuffer);
