@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
 import { Send, Bot, User, AlertTriangle, Loader } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -182,13 +184,45 @@ export default function AgentBuffer({ model, messages, onMessagesChange }: Agent
             </div>
             <div className={`flex flex-col gap-0.5 max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div
-                className={`px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap !rounded-none border ${
+                className={`px-3 py-2 text-sm leading-relaxed !rounded-none border ${
                   msg.role === 'assistant'
                     ? 'bg-razzmatazz/10 border-razzmatazz/30 text-white'
                     : 'bg-white/5 border-white/10 text-gray-200'
                 } ${msg.role === 'assistant' && !msg.content && streaming ? 'animate-pulse' : ''}`}
               >
-                {msg.content || (streaming ? '▋' : '')}
+                {msg.content || (streaming ? '▋' : '') ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      h1: ({ children }) => <h1 className="text-base font-bold text-razzmatazz mb-2 mt-1 uppercase tracking-wider">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-sm font-bold text-razzmatazz mb-1 mt-1 uppercase tracking-wider">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-bold text-razzmatazz/80 mb-1 mt-1">{children}</h3>,
+                      code: ({ children, className }) => {
+                        const isBlock = className?.includes('language-');
+                        return isBlock ? (
+                          <code className="block bg-black/40 border border-razzmatazz/20 px-3 py-2 my-2 text-xs text-razzmatazz/90 font-mono overflow-x-auto whitespace-pre">{children}</code>
+                        ) : (
+                          <code className="bg-black/40 border border-razzmatazz/20 px-1 text-xs text-razzmatazz/90 font-mono">{children}</code>
+                        );
+                      },
+                      pre: ({ children }) => <pre className="my-2 overflow-x-auto">{children}</pre>,
+                      ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5 pl-2">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5 pl-2">{children}</ol>,
+                      li: ({ children }) => <li className="text-sm">{children}</li>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-razzmatazz/50 pl-3 my-2 text-gray-400 italic">{children}</blockquote>,
+                      strong: ({ children }) => <strong className="font-bold text-razzmatazz/90">{children}</strong>,
+                      em: ({ children }) => <em className="italic text-gray-300">{children}</em>,
+                      a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-razzmatazz underline hover:text-white transition-colors">{children}</a>,
+                      hr: () => <hr className="border-razzmatazz/30 my-3" />,
+                      table: ({ children }) => <table className="w-full text-xs border-collapse my-2">{children}</table>,
+                      th: ({ children }) => <th className="border border-razzmatazz/30 px-2 py-1 text-razzmatazz font-bold uppercase text-left">{children}</th>,
+                      td: ({ children }) => <td className="border border-razzmatazz/20 px-2 py-1 text-gray-300">{children}</td>,
+                    }}
+                  >
+                    {msg.content || '▋'}
+                  </ReactMarkdown>
+                ) : null}
               </div>
               <span className="text-gray-600 text-xs">{fmt(msg.timestamp)}</span>
             </div>
