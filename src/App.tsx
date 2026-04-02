@@ -3,7 +3,7 @@ import Buffer from './components/Buffer';
 import ConfigBuffer from './components/ConfigBuffer';
 import AgentBuffer, { type Message as AgentMessage } from './components/AgentBuffer';
 import AgentsBuffer from './components/AgentsBuffer';
-import LinksBuffer from './components/LinksBuffer';
+import HelpBuffer from './components/HelpBuffer';
 import TilingWorkspace from './components/TilingWorkspace';
 import CommandPrompt from './components/CommandPrompt';
 import { insertBuffer, removeBuffer, swapLeaves, updateRatio, type BSPNode, type BSPPath } from './utils/bsp';
@@ -14,7 +14,7 @@ interface AgentRecord {
   model: string;
 }
 
-type BufferType = 'config' | 'agent' | 'agents' | 'links';
+type BufferType = 'config' | 'agent' | 'agents' | 'help';
 
 type BufferData = {
   id: string;
@@ -31,7 +31,13 @@ export default function App() {
   const [tiledIds, setTiledIds] = useState<Set<string>>(new Set());
   const [agents, setAgents] = useState<Map<string, AgentRecord>>(new Map());
   const [agentHistories, setAgentHistories] = useState<Map<string, AgentMessage[]>>(new Map());
-  const [links, setLinks] = useState<Map<string, string>>(new Map()); // target -> source
+
+  /**
+   * Per-agent tool sets: agentId (e.g. "alpha") -> Set of peer agent identifiers it can call.
+   * Keyed by buffer-id prefix (the agent identifier string, NOT "agent-X").
+   */
+  const [agentTools, setAgentTools] = useState<Map<string, Set<string>>>(new Map());
+
   const agentRefs = useRef<Map<string, AgentBufferHandle>>(new Map());
 
   // Refs to latest state — used inside stable callbacks to avoid stale closures
@@ -39,14 +45,17 @@ export default function App() {
   buffersRef.current = buffers;
   const agentsRef = useRef<Map<string, AgentRecord>>(new Map());
   agentsRef.current = agents;
-  const linksRef = useRef<Map<string, string>>(new Map());
-  linksRef.current = links;
 
   // ── Stable history helpers ───────────────────────────────────────────────────
 
-  // setAgentHistory is stable: only depends on the setter (which never changes)
   const setAgentHistory = useCallback((bufferId: string, msgs: AgentMessage[]) => {
     setAgentHistories(prev => new Map([...prev, [bufferId, msgs]]));
+  }, []);
+
+  // ── Stable agent-tools helpers ───────────────────────────────────────────────
+
+  const setAgentToolSet = useCallback((agentId: string, tools: Set<string>) => {
+    setAgentTools(prev => new Map([...prev, [agentId, tools]]));
   }, []);
 
   // ── Stable buffer / tiling callbacks ────────────────────────────────────────
@@ -82,7 +91,6 @@ export default function App() {
     y: window.innerHeight / 4 + curr.length * 20,
   });
 
-  // The actual command logic — always fresh via ref, never triggers re-renders
   const executeCommandImpl = (cmdStr: string) => {
     const parts = cmdStr.trim().split(/\s+/);
     const base = parts[0];
@@ -121,6 +129,7 @@ export default function App() {
       const id = `agent-${identifier}`;
       setAgents(prev => { const n = new Map(prev); n.delete(identifier); return n; });
       setAgentHistories(prev => { const n = new Map(prev); n.delete(id); return n; });
+      setAgentTools(prev => { const n = new Map(prev); n.delete(identifier); return n; });
       removeBufferById(id);
 
     } else if (base === 'CONFIG') {
@@ -131,43 +140,19 @@ export default function App() {
         return [...prev, { id, type: 'config', title: `CONFIG: ${provider}`, props: { provider }, initialPosition: nextPosition(prev) }];
       });
 
-    } else if (base === 'LINK') {
-      const sourceId = parts[1];
-      const targetId = parts[2];
-      if (!sourceId || !targetId || sourceId === targetId) return;
-      setLinks(prev => new Map([...prev, [targetId, sourceId]]));
-
-    } else if (base === 'UNLINK') {
-      const targetId = parts[1];
-      if (!targetId) return;
-      setLinks(prev => { const n = new Map(prev); n.delete(targetId); return n; });
-
-    } else if (base === 'LINKS') {
-      setBuffers(prev => {
-        if (prev.find(b => b.id === 'links')) return prev;
-        return [...prev, { id: 'links', type: 'links', title: 'LINKS', props: {}, initialPosition: nextPosition(prev) }];
-      });
-      
     } else if (base === 'CLEAR') {
       setBuffers([]);
       setBspTree(null);
       setTiledIds(new Set());
+
+    } else if (base === 'HELP') {
+      setBuffers(prev => {
+        if (prev.find(b => b.id === 'help')) return prev;
+        return [...prev, { id: 'help', type: 'help', title: 'HELP', props: {}, initialPosition: nextPosition(prev) }];
+      });
     }
   };
 
-  const handleMessageComplete = useCallback((sourceId: string, content: string) => {
-    // Find all targets linked to this source
-    for (const [target, source] of linksRef.current.entries()) {
-      if (source === sourceId) {
-        const handle = agentRefs.current.get(`agent-${target}`);
-        if (handle) {
-          handle.sendMessage(content).catch(console.error);
-        }
-      }
-    }
-  }, []);
-
-  // Stable reference passed to CommandPrompt — the ref keeps it always current
   const executeCommandRef = useRef(executeCommandImpl);
   executeCommandRef.current = executeCommandImpl;
   const executeCommand = useCallback((cmd: string) => executeCommandRef.current(cmd), []);
@@ -181,22 +166,36 @@ export default function App() {
     [],
   );
 
-  // renderBufferContent only changes when histories or agents list changes — not on typing
+  /**
+   * Returns the AgentBufferHandle for a given agent identifier (not buffer id).
+   * Used by AgentBuffer to call peer agents as tools.
+   */
+  const getAgentHandle = useCallback((agentId: string): AgentBufferHandle | null => {
+    return agentRefs.current.get(`agent-${agentId}`) ?? null;
+  }, []);
+
   const renderBufferContent = useCallback(
     (bufferId: string) => {
       const buf = buffersRef.current.find(b => b.id === bufferId);
       if (!buf) return null;
+
       if (buf.type === 'config') {
         return <ConfigBuffer provider={buf.props.provider as string} onSave={() => {}} />;
       }
+
       if (buf.type === 'agent') {
         const identifier = buf.props.identifier as string;
         const model = buf.props.model as string;
         const messages =
           agentHistories.get(bufferId) ?? [
-            { role: 'assistant' as const, content: `Agent ${identifier} online. Running \`${model}\`. How can I assist?`, timestamp: Date.now() },
+            {
+              role: 'assistant' as const,
+              content: `Agent ${identifier} online. Running \`${model}\`. How can I assist?`,
+              timestamp: Date.now(),
+            },
           ];
-        const isLinkedTarget = links.has(identifier);
+        const enabledTools = agentTools.get(identifier) ?? new Set<string>();
+
         return (
           <AgentBuffer
             ref={node => {
@@ -204,22 +203,28 @@ export default function App() {
               else agentRefs.current.delete(bufferId);
             }}
             model={model}
+            identifier={identifier}
             messages={messages}
             onMessagesChange={msgs => setAgentHistory(bufferId, msgs)}
-            isLinkedTarget={isLinkedTarget}
-            onMessageComplete={content => handleMessageComplete(identifier, content)}
+            availableAgents={agentsList}
+            enabledTools={enabledTools}
+            onToolsChange={tools => setAgentToolSet(identifier, tools)}
+            getAgentHandle={getAgentHandle}
           />
         );
       }
+
       if (buf.type === 'agents') {
         return <AgentsBuffer agents={agentsList} />;
       }
-      if (buf.type === 'links') {
-        return <LinksBuffer links={links} onUnlink={(targetId) => setLinks(prev => { const n = new Map(prev); n.delete(targetId); return n; })} />;
+
+      if (buf.type === 'help') {
+        return <HelpBuffer />;
       }
+
       return null;
     },
-    [agentHistories, agentsList, links, setAgentHistory, handleMessageComplete],
+    [agentHistories, agentsList, agentTools, setAgentHistory, setAgentToolSet, getAgentHandle],
   );
 
   const floatingBuffers = useMemo(
@@ -257,10 +262,12 @@ export default function App() {
             onTile={tileBuffer}
             initialPosition={buffer.initialPosition}
             zIndex={100 + index}
-            maxHeight={
-              buffer.type === 'agent' ? '560px'
-              : buffer.type === 'agents' ? '320px'
-              : undefined
+            padded={buffer.type !== 'agent'}
+            initialSize={
+              buffer.type === 'agent' ? { w: 400, h: 480 }
+              : buffer.type === 'agents' ? { w: 400, h: 280 }
+              : buffer.type === 'help' ? { w: 520, h: 560 }
+              : { w: 400, h: 320 }
             }
           >
             {renderBufferContent(buffer.id)}

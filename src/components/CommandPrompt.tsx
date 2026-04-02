@@ -12,9 +12,6 @@ const AVAILABLE_COMMANDS: CommandDef[] = [
   { name: 'AGENT', args: '<IDENTIFIER>', desc: "Open a running agent's buffer" },
   { name: 'AGENTS', desc: 'Open a buffer showing all running agents' },
   { name: 'KILL', args: '<IDENTIFIER>', desc: 'Kill a running agent' },
-  { name: 'LINK', args: '<ID_SOURCE> <ID_TARGET>', desc: 'Link output of source agent to target agent' },
-  { name: 'UNLINK', args: '<ID_TARGET>', desc: 'Unlink a target agent from its source' },
-  { name: 'LINKS', desc: 'Open a buffer showing all active agent links' },
   { name: 'CONFIG', args: '<PROVIDER>', desc: 'Configure an API provider (e.g. OPENROUTER)' },
   { name: 'CLEAR', desc: 'Close all open buffers and clear workspace' },
   { name: 'HELP', desc: 'Show list of available commands and documentation' },
@@ -49,9 +46,10 @@ function CommandPrompt({ onExecute }: CommandPromptProps) {
   const handleChange = (val: string) => {
     const upper = val.toUpperCase();
     setCommand(upper);
-    if (upper.trim()) {
-      const base = upper.trim().split(' ')[0];
-      setSuggestions(AVAILABLE_COMMANDS.filter(c => c.name.startsWith(base)));
+    const trimmed = upper.trim();
+    // Only suggest while the user is typing the command name itself (no spaces / args yet)
+    if (trimmed && !trimmed.includes(' ')) {
+      setSuggestions(AVAILABLE_COMMANDS.filter(c => c.name.startsWith(trimmed)));
       setSelectedIndex(0);
     } else {
       setSuggestions([]);
@@ -77,13 +75,21 @@ function CommandPrompt({ onExecute }: CommandPromptProps) {
         setSelectedIndex(p => (p < suggestions.length - 1 ? p + 1 : 0));
         return;
       }
+      // Tab cycles to next suggestion
       if (e.key === 'Tab') {
+        e.preventDefault();
+        setSelectedIndex(p => (p < suggestions.length - 1 ? p + 1 : 0));
+        return;
+      }
+      // Enter autocompletes the highlighted suggestion without running it
+      if (e.key === 'Enter') {
         e.preventDefault();
         setCommand(suggestions[selectedIndex].name + ' ');
         setSuggestions([]);
         return;
       }
     }
+    // Enter with no suggestions → execute
     if (e.key === 'Enter') {
       e.preventDefault();
       submit(command);
@@ -141,7 +147,7 @@ function CommandPrompt({ onExecute }: CommandPromptProps) {
             autoComplete="off"
           />
           <div className="text-gray-600 text-xs ml-4 select-none uppercase">
-            Tab to complete ↵ to run
+            ↵ autocomplete · Tab cycle · ↵ run
           </div>
         </div>
       </label>
