@@ -58,13 +58,17 @@ Opened automatically on `SPAWN` or manually via `AGENT <IDENTIFIER>`.
 - **Markdown**: Rich text rendering via `react-markdown` + `remark-gfm`.
 - Chat history is **persistent**: stored in `App.tsx` (`agentHistories` map keyed by buffer ID) and survives close/reopen, tile/float, and remounts.
 - Supports **abort** (Stop button) mid-stream.
-- **Linking**: Can be a "Linked Target." In this mode, manual input is disabled, and the agent automatically processes output piped from a source agent.
+- Supports tool-calling to peer agents and canvases, including live pending tool-call rows and structured tool results.
 
 ### `agents` — Agent Registry Overview
 Opened via `AGENTS`. A live table of all running agents: identifier, model, and a green pulse indicator.
 
-### `links` — Agent Link Registry
-Opened via `LINKS`. A live table showing active `Target <- Source` piping paths with actions to unlink.
+### `canvas` — Artifact/Canvas Surface
+Opened via `CANVAS <ID>`.
+- Empty-state canvas that can be populated by agents via tool calls.
+- Tabbed view (`Preview` / `Source`), defaulting to `Preview`.
+- HTML canvases render in-browser preview with source inspection.
+- Closing a canvas fully removes it from state and from agent canvas tool permissions.
 
 ---
 
@@ -74,14 +78,13 @@ Opened via `LINKS`. A live table showing active `Target <- Source` piping paths 
 |---|---|---|
 | `SPAWN` | `<ID> <MODEL>` | Spawn a new agent and immediately open its buffer |
 | `AGENT` | `<ID>` | Re-open a running agent's buffer |
+| `CANVAS` | `<ID>` | Open (or create) a canvas buffer |
 | `AGENTS` | — | Open the agent registry overview buffer |
 | `KILL` | `<ID>` | Kill an agent and clear its history/buffer |
-| `LINK` | `<SRC> <TGT>` | Pipe output of Source agent into Target agent |
-| `UNLINK` | `<TGT>` | Remove a link from a target agent |
-| `LINKS` | — | Open the agent link registry buffer |
+| `ULTRAKILL` | — | Kill all running agents at once |
 | `CONFIG` | `<PROVIDER>` | Open the provider configuration buffer |
 | `CLEAR` | — | Close all open buffers and reset the tiling workspace |
-| `HELP` | — | Show available commands (planned) |
+| `HELP` | — | Show available commands and documentation |
 
 ---
 
@@ -95,10 +98,11 @@ src/
 └── components/
     ├── Buffer.tsx            # Floating buffer shell (drag, clamp, shadow, tile/close buttons)
     ├── TilingWorkspace.tsx   # BSP renderer (pixel-accurate layout, resize handles, drag-to-swap)
-    ├── AgentBuffer.tsx       # Controlled streaming chat UI + Markdown + Linking onComplete hooks
+    ├── AgentBuffer.tsx       # Streaming chat UI + tool-calling loop (agents + canvases)
     ├── AgentsBuffer.tsx      # Agent registry table
-    ├── LinksBuffer.tsx       # Agent link registry table
+    ├── CanvasBuffer.tsx      # Canvas/artifact preview + source tabs
     ├── ConfigBuffer.tsx      # API key configuration form
+    ├── HelpBuffer.tsx        # In-app command and workflow docs
     └── CommandPrompt.tsx     # Isolated, high-performance command interface
 ```
 
@@ -110,5 +114,6 @@ src/
 | `tiledIds` | `Set<string>` | Fast lookup for which buffers are currently tiled |
 | `agents` | `Map<id, AgentRecord>` | Live agent registry (identifier → model) |
 | `agentHistories` | `Map<id, Message[]>` | Persistent chat histories keyed by buffer ID |
-| `links` | `Map<tgt, src>` | Active agent-to-agent output piping links |
+| `canvases` | `Map<id, CanvasRecord>` | Canvas registry and current content/metadata |
+| `agentTools` | `Map<agentId, AgentTools>` | Per-agent tool permissions (agents/canvases/spawn) |
 | `agentRefs` | `useRef<Map>` | Imperative handles to AgentBuffers for automated messaging |

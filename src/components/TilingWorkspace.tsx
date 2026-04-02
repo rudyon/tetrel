@@ -48,9 +48,6 @@ export default function TilingWorkspace({
   const [tileDragSource, setTileDragSource] = useState<string | null>(null);
   const [tileDragTarget, setTileDragTarget] = useState<string | null>(null);
 
-  // Populated during render so mousemove can do hit-testing
-  const leafBoundsRef = useRef<LeafBoundsEntry[]>([]);
-
   // Track container size
   useEffect(() => {
     const el = containerRef.current;
@@ -82,7 +79,7 @@ export default function TilingWorkspace({
     // Tile drag — hit-test which leaf is under cursor
     if (tileDragSource) {
       const rel = getRelPos(e.clientX, e.clientY);
-      const hit = leafBoundsRef.current.find(
+      const hit = layout.leafBounds.find(
         lb =>
           rel.x >= lb.bounds.x &&
           rel.x <= lb.bounds.x + lb.bounds.w &&
@@ -105,32 +102,27 @@ export default function TilingWorkspace({
     setTileDragSource(null);
     setTileDragTarget(null);
   };
-
-  // Reset leaf bounds before each render pass
-  leafBoundsRef.current = [];
-
-  // Accumulate flat element list — avoids fragment key issues
-  const elements: ReactNode[] = [];
+  const layout = {
+    elements: [] as ReactNode[],
+    leafBounds: [] as LeafBoundsEntry[],
+  };
 
   const renderNode = (node: BSPNode, bounds: Rect, path: BSPPath) => {
     if (node.type === 'leaf') {
       const { bufferId } = node;
-      leafBoundsRef.current.push({ bufferId, bounds });
+      layout.leafBounds.push({ bufferId, bounds });
       const isSrc = tileDragSource === bufferId;
       const isTgt = tileDragTarget === bufferId;
 
-      elements.push(
+      layout.elements.push(
         <div
           key={`tile-${bufferId}`}
           className={`absolute flex flex-col border border-razzmatazz bg-background !rounded-none transition-opacity duration-100 overflow-hidden ${isSrc ? 'opacity-40' : 'opacity-100'}`}
           style={{ left: bounds.x, top: bounds.y, width: bounds.w, height: bounds.h }}
         >
-          {/* Drag-target highlight overlay */}
           {isTgt && (
             <div className="absolute inset-0 bg-razzmatazz/20 border-2 border-razzmatazz z-10 pointer-events-none" />
           )}
-
-          {/* Title bar */}
           <div
             className="bg-razzmatazz text-white flex justify-between items-center px-2 py-1 select-none !rounded-none flex-shrink-0"
             style={{ cursor: tileDragSource ? (isSrc ? 'grabbing' : 'default') : 'grab' }}
@@ -143,7 +135,6 @@ export default function TilingWorkspace({
               {getTitle(bufferId)}
             </span>
             <div className="flex gap-2 items-center flex-shrink-0">
-              {/* Float button */}
               <button
                 onMouseDown={e => e.stopPropagation()}
                 onClick={() => onFloat(bufferId)}
@@ -152,7 +143,6 @@ export default function TilingWorkspace({
               >
                 <Move size={13} />
               </button>
-              {/* Close button */}
               <button
                 onMouseDown={e => e.stopPropagation()}
                 onClick={() => onClose(bufferId)}
@@ -162,8 +152,6 @@ export default function TilingWorkspace({
               </button>
             </div>
           </div>
-
-          {/* Content */}
           <div className="flex-1 overflow-hidden min-h-0">
             {renderContent(bufferId)}
           </div>
@@ -172,9 +160,10 @@ export default function TilingWorkspace({
       return;
     }
 
-    // Split node — recurse
     const { dir, ratio, a, b } = node;
-    let aBounds: Rect, bBounds: Rect, hBounds: Rect;
+    let aBounds: Rect;
+    let bBounds: Rect;
+    let hBounds: Rect;
 
     if (dir === 'h') {
       const aW = Math.floor(bounds.w * ratio - HANDLE_SIZE / 2);
@@ -192,8 +181,7 @@ export default function TilingWorkspace({
       hBounds = { x: bounds.x, y: bounds.y + aH, w: bounds.w, h: HANDLE_SIZE };
     }
 
-    // Resize handle
-    elements.push(
+    layout.elements.push(
       <div
         key={`handle-${path.join('.')}`}
         className={`absolute z-20 transition-colors ${dir === 'h' ? 'cursor-col-resize hover:bg-razzmatazz/50' : 'cursor-row-resize hover:bg-razzmatazz/50'} bg-background`}
@@ -221,6 +209,7 @@ export default function TilingWorkspace({
     renderNode(tree, rootBounds, []);
   }
 
+
   const workspaceCursor =
     isResizing === 'h' ? 'col-resize' : isResizing === 'v' ? 'row-resize' : tileDragSource ? 'grabbing' : 'default';
 
@@ -233,7 +222,7 @@ export default function TilingWorkspace({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {elements}
+      {layout.elements}
     </div>
   );
 }

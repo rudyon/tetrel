@@ -10,8 +10,10 @@ interface CommandDef {
 const AVAILABLE_COMMANDS: CommandDef[] = [
   { name: 'SPAWN', args: '<IDENTIFIER> <MODEL>', desc: 'Spawn a new agent with a given model' },
   { name: 'AGENT', args: '<IDENTIFIER>', desc: "Open a running agent's buffer" },
+  { name: 'CANVAS', args: '<ID>', desc: 'Open or create a canvas buffer' },
   { name: 'AGENTS', desc: 'Open a buffer showing all running agents' },
   { name: 'KILL', args: '<IDENTIFIER>', desc: 'Kill a running agent' },
+  { name: 'ULTRAKILL', desc: 'Kill all running agents' },
   { name: 'CONFIG', args: '<PROVIDER>', desc: 'Configure an API provider (e.g. OPENROUTER)' },
   { name: 'CLEAR', desc: 'Close all open buffers and clear workspace' },
   { name: 'HELP', desc: 'Show list of available commands and documentation' },

@@ -23,6 +23,12 @@ const COMMANDS: CommandEntry[] = [
     example: 'AGENT alpha',
   },
   {
+    name: 'CANVAS',
+    args: '<ID>',
+    desc: 'Open (or create) a canvas buffer. Agents with canvas tool access can write artifact content here.',
+    example: 'CANVAS dashboard',
+  },
+  {
     name: 'AGENTS',
     desc: 'Open the agent registry — a live table of every running agent, its model, and status.',
     example: 'AGENTS',
@@ -32,6 +38,11 @@ const COMMANDS: CommandEntry[] = [
     args: '<ID>',
     desc: 'Terminate an agent and erase its chat history. This is permanent.',
     example: 'KILL alpha',
+  },
+  {
+    name: 'ULTRAKILL',
+    desc: 'Terminate all running agents and clear all agent histories at once.',
+    example: 'ULTRAKILL',
   },
   {
     name: 'CONFIG',

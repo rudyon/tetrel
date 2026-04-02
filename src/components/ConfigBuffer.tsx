@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface ConfigBufferProps {
   provider: string;
@@ -6,15 +6,8 @@ interface ConfigBufferProps {
 }
 
 export default function ConfigBuffer({ provider, onSave }: ConfigBufferProps) {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(`TETREL_API_KEY_${provider}`) ?? '');
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    const existingKey = localStorage.getItem(`TETREL_API_KEY_${provider}`);
-    if (existingKey) {
-      setApiKey(existingKey);
-    }
-  }, [provider]);
 
   const handleSave = () => {
     localStorage.setItem(`TETREL_API_KEY_${provider}`, apiKey);
