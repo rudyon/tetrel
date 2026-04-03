@@ -5,10 +5,12 @@ import AgentBuffer, { type Message as AgentMessage } from './components/AgentBuf
 import AgentsBuffer from './components/AgentsBuffer';
 import HelpBuffer from './components/HelpBuffer';
 import CanvasBuffer from './components/CanvasBuffer';
+import GraphBuffer from './components/GraphBuffer';
 import TilingWorkspace from './components/TilingWorkspace';
 import CommandPrompt from './components/CommandPrompt';
 import { insertBuffer, removeBuffer, swapLeaves, updateRatio, type BSPNode, type BSPPath } from './utils/bsp';
 import type { AgentBufferHandle } from './components/AgentBuffer';
+import type { GraphToolEvent } from './types/graph';
 
 interface AgentRecord {
   identifier: string;
@@ -28,7 +30,7 @@ interface AgentTools {
   canSpawnCanvas: boolean;
 }
 
-type BufferType = 'config' | 'agent' | 'agents' | 'help' | 'canvas';
+type BufferType = 'config' | 'agent' | 'agents' | 'help' | 'canvas' | 'graph';
 
 type BufferData = {
   id: string;
@@ -37,6 +39,9 @@ type BufferData = {
   props: Record<string, unknown>;
   initialPosition: { x: number; y: number };
 };
+
+const GRAPH_RETENTION_MS = 3 * 60 * 1000;
+const GRAPH_MAX_EVENTS = 600;
 
 export default function App() {
   // ── Core state ───────────────────────────────────────────────────────────────
@@ -47,6 +52,8 @@ export default function App() {
   const [agentHistories, setAgentHistories] = useState<Map<string, AgentMessage[]>>(new Map());
   const [canvases, setCanvases] = useState<Map<string, CanvasRecord>>(new Map());
   const [agentTools, setAgentTools] = useState<Map<string, AgentTools>>(new Map());
+  const [graphEvents, setGraphEvents] = useState<GraphToolEvent[]>([]);
+  const [graphPaused, setGraphPaused] = useState(false);
 
   const agentRefs = useRef<Map<string, AgentBufferHandle>>(new Map());
 
@@ -61,6 +68,16 @@ export default function App() {
   const setAgentToolSet = useCallback((agentId: string, tools: AgentTools) => {
     setAgentTools(prev => new Map([...prev, [agentId, tools]]));
   }, []);
+
+  const appendGraphEvent = useCallback((event: GraphToolEvent) => {
+    if (graphPaused) return;
+    setGraphEvents(prev => {
+      const now = Date.now();
+      const trimmed = prev.filter(e => now - e.timestamp <= GRAPH_RETENTION_MS);
+      const next = [...trimmed, event];
+      return next.length > GRAPH_MAX_EVENTS ? next.slice(next.length - GRAPH_MAX_EVENTS) : next;
+    });
+  }, [graphPaused]);
 
   const upsertCanvas = (id: string, content: string, mimeType = 'text/html') => {
     setCanvases(prev => {
@@ -219,11 +236,19 @@ export default function App() {
         return [...prev, { id, type: 'config', title: `CONFIG: ${provider}`, props: { provider }, initialPosition: nextPosition(prev) }];
       });
 
+    } else if (base === 'GRAPH') {
+      setBuffers(prev => {
+        if (prev.find(b => b.id === 'graph')) return prev;
+        return [...prev, { id: 'graph', type: 'graph', title: 'GRAPH', props: {}, initialPosition: nextPosition(prev) }];
+      });
+
     } else if (base === 'CLEAR') {
       setBuffers([]);
       setBspTree(null);
       setTiledIds(new Set());
       setCanvases(new Map());
+      setGraphEvents([]);
+      setGraphPaused(false);
       setAgentTools(prev => {
         const next = new Map<string, AgentTools>();
         for (const [agentId, tools] of prev) {
@@ -311,6 +336,7 @@ export default function App() {
             });
             return canvasId;
           }}
+          onToolEvent={appendGraphEvent}
         />
       );
     }
@@ -328,6 +354,17 @@ export default function App() {
       const canvas = canvases.get(canvasId);
       if (!canvas) return null;
       return <CanvasBuffer id={canvas.id} content={canvas.content} mimeType={canvas.mimeType} updatedAt={canvas.updatedAt} />;
+    }
+
+    if (buf.type === 'graph') {
+      return (
+        <GraphBuffer
+          events={graphEvents}
+          paused={graphPaused}
+          onPauseChange={setGraphPaused}
+          onClear={() => setGraphEvents([])}
+        />
+      );
     }
 
     return null;
@@ -368,12 +405,13 @@ export default function App() {
             onTile={tileBuffer}
             initialPosition={buffer.initialPosition}
             zIndex={100 + index}
-            padded={buffer.type !== 'agent' && buffer.type !== 'canvas'}
+            padded={buffer.type !== 'agent' && buffer.type !== 'canvas' && buffer.type !== 'graph'}
             initialSize={
               buffer.type === 'agent' ? { w: 400, h: 480 }
               : buffer.type === 'agents' ? { w: 400, h: 280 }
               : buffer.type === 'help' ? { w: 520, h: 560 }
               : buffer.type === 'canvas' ? { w: 900, h: 560 }
+              : buffer.type === 'graph' ? { w: 960, h: 560 }
               : { w: 400, h: 320 }
             }
           >

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { GraphToolEvent } from '../types/graph';
 
 export interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -75,6 +76,7 @@ interface AgentBufferProps {
   getAgentHandle: (identifier: string) => AgentBufferHandle | null;
   onCanvasWrite: (canvasId: string, content: string, mimeType?: string) => string;
   onSpawnCanvas: (ownerAgentId: string, requestedId: string | null, initialContent: string, mimeType?: string) => string;
+  onToolEvent: (event: GraphToolEvent) => void;
 }
 
 export interface AgentBufferHandle {
@@ -323,6 +325,7 @@ const AgentBuffer = forwardRef<AgentBufferHandle, AgentBufferProps>(
       getAgentHandle,
       onCanvasWrite,
       onSpawnCanvas,
+      onToolEvent,
     },
     ref,
   ) => {
@@ -441,6 +444,7 @@ const AgentBuffer = forwardRef<AgentBufferHandle, AgentBufferProps>(
           onCanvasWrite,
           onSpawnCanvas,
           identifier,
+          onToolEvent,
           (updated) => {
             onMessagesChange(updated);
             messagesRef.current = updated;
@@ -874,6 +878,7 @@ async function agenticLoop(
   onCanvasWrite: (canvasId: string, content: string, mimeType?: string) => string,
   onSpawnCanvas: (ownerAgentId: string, requestedId: string | null, initialContent: string, mimeType?: string) => string,
   ownerAgentId: string,
+  onToolEvent: (event: GraphToolEvent) => void,
   setThread: (msgs: Message[]) => void,
   messagesRef: React.MutableRefObject<Message[]>,
 ): Promise<string> {
@@ -1000,6 +1005,31 @@ async function agenticLoop(
         args = { message: tc.args };
       }
 
+      const inferredPendingTarget = (() => {
+        if (tc.name.startsWith('agent_')) {
+          return {
+            targetType: 'agent' as const,
+            targetId: tc.name.replace(/^agent_/, '') || null,
+          };
+        }
+        if (tc.name === 'canvas_write') {
+          return {
+            targetType: 'canvas' as const,
+            targetId: typeof args.canvas_id === 'string' ? args.canvas_id : null,
+          };
+        }
+        if (tc.name === 'spawn_canvas') {
+          return {
+            targetType: 'spawn' as const,
+            targetId: typeof args.canvas_id === 'string' ? args.canvas_id : null,
+          };
+        }
+        return {
+          targetType: 'unknown' as const,
+          targetId: null,
+        };
+      })();
+
       const pendingId = tc.id;
       const existingPending = messagesRef.current.find(
         m => m.role === 'tool' && m.tool_call_id === pendingId,
@@ -1018,7 +1048,20 @@ async function agenticLoop(
         messagesRef.current = thread;
       }
 
+      onToolEvent({
+        phase: 'pending',
+        sourceAgentId: ownerAgentId,
+        toolCallId: pendingId,
+        toolName: tc.name || 'tool',
+        targetType: inferredPendingTarget.targetType,
+        targetId: inferredPendingTarget.targetId,
+        timestamp: Date.now(),
+      });
+
       let result = '';
+      let resultStatus: GraphToolEvent['resultStatus'] = 'success';
+      let finalTargetType: GraphToolEvent['targetType'] = inferredPendingTarget.targetType;
+      let finalTargetId: string | null = inferredPendingTarget.targetId;
       if (tc.name.startsWith('agent_')) {
         const agentId = tc.name.replace(/^agent_/, '');
         const messageToSend = typeof args.message === 'string' ? args.message : tc.args;
@@ -1036,6 +1079,7 @@ async function agenticLoop(
               data: { output },
             });
           } catch (e) {
+            resultStatus = 'error';
             result = stringifyToolResult({
               status: 'error',
               operation: 'agent_call',
@@ -1046,6 +1090,7 @@ async function agenticLoop(
             });
           }
         } else {
+          resultStatus = 'error';
           result = stringifyToolResult({
             status: 'error',
             operation: 'agent_call',
@@ -1057,6 +1102,7 @@ async function agenticLoop(
         }
       } else if (tc.name === 'canvas_write') {
         if (canvasMutationUsed) {
+          resultStatus = 'noop';
           result = stringifyToolResult({
             status: 'noop',
             operation: 'canvas_write',
@@ -1070,6 +1116,7 @@ async function agenticLoop(
           const content = typeof args.content === 'string' ? args.content : '';
           const mimeType = typeof args.mime_type === 'string' ? args.mime_type : 'text/html';
           if (!canvasId || !content) {
+            resultStatus = 'error';
             result = stringifyToolResult({
               status: 'error',
               operation: 'canvas_write',
@@ -1094,6 +1141,7 @@ async function agenticLoop(
         }
       } else if (tc.name === 'spawn_canvas') {
         if (canvasMutationUsed) {
+          resultStatus = 'noop';
           result = stringifyToolResult({
             status: 'noop',
             operation: 'spawn_canvas',
@@ -1107,6 +1155,7 @@ async function agenticLoop(
           const content = typeof args.content === 'string' ? args.content : '';
           const mimeType = typeof args.mime_type === 'string' ? args.mime_type : 'text/html';
           if (!content) {
+            resultStatus = 'error';
             result = stringifyToolResult({
               status: 'error',
               operation: 'spawn_canvas',
@@ -1118,6 +1167,8 @@ async function agenticLoop(
           } else {
             const createdId = onSpawnCanvas(ownerAgentId, requestedId, content, mimeType);
             canvasMutationUsed = true;
+            finalTargetType = 'canvas';
+            finalTargetId = createdId;
             result = stringifyToolResult({
               status: 'success',
               operation: 'spawn_canvas',
@@ -1130,6 +1181,7 @@ async function agenticLoop(
           }
         }
       } else {
+        resultStatus = 'error';
         result = stringifyToolResult({
           status: 'error',
           operation: tc.name || 'unknown',
@@ -1157,6 +1209,17 @@ async function agenticLoop(
       thread = updatedThread;
       setThread(thread);
       messagesRef.current = thread;
+
+      onToolEvent({
+        phase: 'done',
+        sourceAgentId: ownerAgentId,
+        toolCallId: tc.id || pendingId,
+        toolName: tc.name || 'tool',
+        targetType: finalTargetType,
+        targetId: finalTargetId,
+        timestamp: Date.now(),
+        resultStatus,
+      });
     }
 
     // Append/reuse assistant placeholder for the next iteration

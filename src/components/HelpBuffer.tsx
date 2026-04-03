@@ -51,6 +51,11 @@ const COMMANDS: CommandEntry[] = [
     example: 'CONFIG OPENROUTER',
   },
   {
+    name: 'GRAPH',
+    desc: 'Open a live node-link graph showing tool access and tool calls between agents in real time.',
+    example: 'GRAPH',
+  },
+  {
     name: 'CLEAR',
     desc: 'Close all open buffers and reset the tiling workspace. Agent histories are preserved in memory.',
     example: 'CLEAR',

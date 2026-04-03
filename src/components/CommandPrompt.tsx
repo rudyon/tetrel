@@ -15,6 +15,7 @@ const AVAILABLE_COMMANDS: CommandDef[] = [
   { name: 'KILL', args: '<IDENTIFIER>', desc: 'Kill a running agent' },
   { name: 'ULTRAKILL', desc: 'Kill all running agents' },
   { name: 'CONFIG', args: '<PROVIDER>', desc: 'Configure an API provider (e.g. OPENROUTER)' },
+  { name: 'GRAPH', desc: 'Open a live graph of tool access and tool calls' },
   { name: 'CLEAR', desc: 'Close all open buffers and clear workspace' },
   { name: 'HELP', desc: 'Show list of available commands and documentation' },
 ];
